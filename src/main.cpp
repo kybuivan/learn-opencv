@@ -9,6 +9,8 @@
 #include <iostream>
 #include <filesystem>
 using namespace std::filesystem;
+const char* algorithmItems[] = { "resize", "seam", "crop" };
+const int algorithmSize = 3;
 
 struct Texture2D
 {
@@ -105,6 +107,8 @@ public:
 					{
 						puts("Success!");
 						mImageList.clear();
+						mFaces.clear();
+						mCurrentMat.release();
 						mPreviousIdex = mCurrentIdex = 0;
 						for (size_t i = 0; i < NFD_PathSet_GetCount(&outPaths); ++i)
 						{
@@ -132,6 +136,8 @@ public:
 						puts(outPath);
 						mImageList.clear();
 						mPreviousIdex = mCurrentIdex = 0;
+						mFaces.clear();
+						mCurrentMat.release();
 						std::vector<std::string> extensions = { ".jpg", ".JPG", ".png", ".PNG" };
 						for (const auto& entry : std::filesystem::directory_iterator(outPath)) {
 							if (entry.is_regular_file()) {
@@ -269,6 +275,39 @@ public:
 			ImGui::DragFloat("##hidelabel", &mHeight, 0.1f, 1.0f, 100.0f);
 			ImGui::PopItemWidth();
 			ImGui::PopID();
+			ImGui::PushID("Combo");
+			ImGui::TextUnformatted("resize algorithm:");
+			ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
+			ImGui::Combo("##hidelabel", &mAlgorithmItem, algorithmItems, algorithmSize);
+			ImGui::PopID();
+			ImGui::PushID("Face");
+			ImGui::TextUnformatted("enable face detection");
+			ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
+			ImGui::Checkbox("##hidelabel", &mEnableFaceDetection);
+			ImGui::PopID();
+
+			if(mEnableFaceDetection)
+			{
+				ImGui::PushMultiItemsWidths(2, ImGui::CalcItemWidth());
+				ImGui::PushID("resize.w");
+				ImGui::TextUnformatted("resize.w:");
+				ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
+				ImGui::DragInt("##hidelabel", &resizeFaceDetection.width, 1, 100, 1000);
+				ImGui::PopID();
+				ImGui::PushID("resize.h");
+				ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
+				ImGui::TextUnformatted("resize.h:");
+				ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
+				ImGui::DragInt("##hidelabel", &resizeFaceDetection.height, 1, 100, 1000);
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::PushID("limitconfident");
+				ImGui::TextUnformatted("limit confident:");
+				ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
+				ImGui::DragFloat("##hidelabel", &mLimitConfident, 0.01f, 0.0f, 1.0f);
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+			}
 		}
 
 		{
@@ -310,6 +349,8 @@ public:
 				{
 					mPreviousIdex = mCurrentIdex;
 					mCurrentIdex = i;
+					mFaces.clear();
+					mCurrentMat.release();
 				}
 
 				if(i == mCurrentIdex)
@@ -358,7 +399,13 @@ public:
 			ImGui::PopStyleColor();
 		}
 
-		
+		{
+			ImGui::Begin("Debug");
+			if(ImGui::Button("Clear", ImVec2(50,20))) debugLog.clear();
+			for(auto& str : debugLog)
+				ImGui::TextWrapped(str.c_str());
+			ImGui::End();
+		}
 	}
 
 	void SaveFile(std::string path)
@@ -403,7 +450,58 @@ public:
 				// 	borderRect = cv::Rect(borderOfsetPixel*2, borderOfsetPixel, size.width - borderOfsetPixel*3, size.height - borderOfsetPixel*2);
 				// }
 				if(mPreviousIdex != mCurrentIdex || mCurrentMat.empty()) mCurrentMat = cv::imread(mImageList[mCurrentIdex]->GetPath());
-				resizeImg = resizeKeepAspectRatio(mCurrentMat, size, bgColor);
+
+
+				cv::Mat tmpImg = mCurrentMat.clone();
+
+				if(mEnableFaceDetection && mFaces.empty() || mPreviousLimitConfident != mLimitConfident || previousResizeFaceDetection != resizeFaceDetection)
+				{
+					cv::Mat faceDetectImg, faceDetectImgResult;
+					ImVec2 newSize = GetScaleImageSize(ImVec2(mCurrentMat.cols, mCurrentMat.rows), ImVec2(resizeFaceDetection.width, resizeFaceDetection.height));
+					cv::resize(mCurrentMat, faceDetectImg, cv::Size(newSize.x, newSize.y), cv::INTER_CUBIC);
+					if(FaceDetection(faceDetectImg, faceDetectImgResult, mLimitConfident, mFaces, debugLog))
+					{
+
+						cv::Mat resizedFace;
+						cv::Size originalSize(mCurrentMat.cols, mCurrentMat.rows);
+
+						for (int i = 0; i < mFaces.size(); i++) {
+							mFaces[i].x *= mCurrentMat.cols / faceDetectImg.cols;
+							mFaces[i].y *= mCurrentMat.rows / faceDetectImg.rows;
+							mFaces[i].w *= mCurrentMat.cols / faceDetectImg.cols;
+							mFaces[i].h *= mCurrentMat.rows / faceDetectImg.rows;
+						}
+						
+						faceDetectImg.release();
+						faceDetectImgResult.release();
+					} 
+					mPreviousLimitConfident = mLimitConfident;
+					previousResizeFaceDetection = resizeFaceDetection;
+				}
+				
+				if(!mFaces.empty())
+				{
+					for (int i = 0; i < mFaces.size(); i++)
+					{
+						cv::Rect faceROI = {mFaces[i].x, mFaces[i].y, mFaces[i].w, mFaces[i].h};
+						//show the score of the face. Its range is [0-100]
+						std::string sScore = std::format("{:.2f}", mFaces[i].score);
+						cv::putText(tmpImg, sScore, cv::Point(faceROI.x, faceROI.y-13), cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 255, 0), 10);
+						//draw face rectangle
+						cv::rectangle(tmpImg, faceROI, cv::Scalar(0, 255, 0), 10);
+					}
+				}
+				
+				
+				//if(mAlgorithmItem == 0)
+				{
+					resizeImg = resizeKeepAspectRatio(tmpImg, size, bgColor);
+				}
+				// else if(mAlgorithmItem == 1)
+				// {
+					
+				// }
+				tmpImg.release();
 			}
 			// update OpenGL texture if size has changed
 			if (size.width != mTexture.width || size.height != mTexture.height)
@@ -440,12 +538,14 @@ public:
 			image->Release();
 		mImageList.clear();
 		mCurrentIdex = mPreviousIdex = 0;
-		mCurrentMat = {};
+		mCurrentMat.release();
 		mWidth = 6;
 		mHeight = 9;
 		mBgColor = {1.0f, 1.0f, 1.0f, 1.0f};
 		ImageRelease(mTexture);
 		mTexture = ImageInfo::CreateTexture(cv::Mat::zeros(cv::Size(cm2pixel(mWidth), cm2pixel(mHeight)), CV_8UC3));
+		debugLog.clear();
+		mFaces.clear();
 	}
 
 	~Application()
@@ -470,6 +570,14 @@ private:
 	int mPreviousIdex;
 	cv::Mat mCurrentMat;
 	Texture2D mTexture;
+	int mAlgorithmItem = 0;
+	bool mEnableFaceDetection = false;
+	float mLimitConfident = 0.5;
+	float mPreviousLimitConfident = 0.5;
+	cv::Size resizeFaceDetection {300,300};
+	cv::Size previousResizeFaceDetection {300,300};
+	std::vector<FaceRect> mFaces;
+	std::vector<std::string> debugLog;
 };
 
 int main()

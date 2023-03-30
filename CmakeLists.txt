@@ -24,6 +24,7 @@ include(glad2)
 include(imgui)
 include(nfd)
 include(opencv)
+include(libfacedetection)
 
 add_executable (${PROJECT_NAME} ${SRC_FILES})
 
@@ -41,5 +42,6 @@ target_link_libraries(${PROJECT_NAME}
 	glfw
     glad
     nfd
+    facedetection
 	${opencv_LIBS}
 )
