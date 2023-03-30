@@ -1,0 +1,45 @@
+cmake_minimum_required(VERSION 3.16.0 FATAL_ERROR)
+
+project(resize)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${PROJECT_SOURCE_DIR}/cmake/external)
+
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# GLOB_RECURSE also simplifies your glob expressions
+file (GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
+    ${PROJECT_SOURCE_DIR}/src/*.h
+    ${PROJECT_SOURCE_DIR}/src/*.cpp
+)
+
+include(FetchContent)
+include(glfw)
+include(glad2)
+include(imgui)
+include(nfd)
+include(opencv)
+
+add_executable (${PROJECT_NAME} ${SRC_FILES})
+
+if (WIN32)
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
+endif()
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+	${PROJECT_SOURCE_DIR}/src
+	${opencv_INCLUDE_DIRS}
+)
+
+target_link_libraries(${PROJECT_NAME}
+    imgui::imgui
+	glfw
+    glad
+    nfd
+	${opencv_LIBS}
+)
