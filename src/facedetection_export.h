@@ -39,7 +39,4 @@
 #  endif
 #endif
 
-#define FACEDETECTION_EXPORT
-#include "facedetectcnn.h"
-
 #endif /* FACEDETECTION_EXPORT_H */

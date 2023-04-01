@@ -7,7 +7,8 @@
 #include <format>
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
-#include "facedetection_export.h"
+#define FACEDETECTION_EXPORT
+#include "facedetectcnn.h"
 
 #define PPI 300
 #define CM2INCH 1 / 2.54
@@ -55,7 +56,7 @@ ImVec2 GetScaleImageSize(ImVec2 img_size, ImVec2 window_size)
 	return outSize;
 }
 
-cv::Mat resizeKeepAspectRatio(const cv::Mat &input, const cv::Size &dstSize, const cv::Scalar &bgcolor)
+cv::Mat resizeKeepAspectRatio(const cv::Mat &input, const cv::Size &dstSize, const cv::Scalar &bgcolor, bool makeBorder = true)
 {
 	cv::Mat output;
 
@@ -70,42 +71,27 @@ cv::Mat resizeKeepAspectRatio(const cv::Mat &input, const cv::Size &dstSize, con
 		cv::resize(input, output, cv::Size(w2, dstSize.height), 0, 0, cv::INTER_CUBIC);
 	}
 
-	int top = (dstSize.height - output.rows) / 2;
-	int down = (dstSize.height - output.rows + 1) / 2;
-	int left = (dstSize.width - output.cols) / 2;
-	int right = (dstSize.width - output.cols + 1) / 2;
+	if(makeBorder)
+	{
+		int top = (dstSize.height - output.rows) / 2;
+		int down = (dstSize.height - output.rows + 1) / 2;
+		int left = (dstSize.width - output.cols) / 2;
+		int right = (dstSize.width - output.cols + 1) / 2;
 
-	cv::copyMakeBorder(output, output, top, down, left, right, cv::BORDER_CONSTANT, bgcolor);
+		cv::copyMakeBorder(output, output, top, down, left, right, cv::BORDER_CONSTANT, bgcolor);
+	}
 
 	return std::move(output);
 }
 
-bool FaceDetection(const cv::Mat &image, cv::Mat& out, float limitConfident, std::vector<FaceRect>& faces, std::vector<std::string>& logs)
+cv::Rect GetScaleRect(cv::Rect rect, cv::Size targetSize, cv::Size currentSize)
 {
-	out.release();
-	faces = objectdetect_cnn((unsigned char*)(image.ptr(0)), image.cols, image.rows, (int)image.step);
-	int num_faces =(int)faces.size();
-    num_faces = MIN(num_faces, 256);
-	cv::Mat result_image = image.clone();
-	for (int i = 0; i < num_faces; i++)
-    {
-		if(faces[i].score > limitConfident)
-		{
-			cv::Rect faceROI = {faces[i].x, faces[i].y, faces[i].w, faces[i].h};
-			//show the score of the face. Its range is [0-100]
-			std::string sScore = std::format("{:.2f}", faces[i].score);
-			cv::putText(result_image, sScore, cv::Point(faceROI.x, faceROI.y-3), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
-			//draw face rectangle
-			cv::rectangle(result_image, faceROI, cv::Scalar(0, 255, 0), 2);
-
-			//print the result
-			std::string logStr = std::format("face {}: confidence={:.2f}, [{}, {}, {}, {}]", 
-					i, faces[i].score, faceROI.x, faceROI.y, faceROI.width, faceROI.height);
-			logs.push_back(logStr);
-		}
-	}
-
-	out = result_image;
-	return true;
+	cv::Rect2f result = rect;
+	result.x *= (float)targetSize.width / currentSize.width;
+	result.y *= (float)targetSize.height / currentSize.height;
+	result.width *= (float)targetSize.width / currentSize.width;
+	result.height *= (float)targetSize.height / currentSize.height;
+	return result;
 }
+
 #endif

@@ -8,6 +8,7 @@
 #include "opencv2/highgui.hpp"
 #include <iostream>
 #include <filesystem>
+#include "seam_carver.h"
 using namespace std::filesystem;
 const char* algorithmItems[] = { "resize", "seam", "crop" };
 const int algorithmSize = 3;
@@ -42,6 +43,8 @@ public:
 			mTexture.width = 0;
 			mTexture.height = 0;
 		}
+		
+		if(!mFaces.empty()) mFaces.clear();
 	}
 
 	static Texture2D CreateTexture(cv::Mat img, int format = GL_RGB)
@@ -72,12 +75,58 @@ public:
 		std::string name = mPath;
 		return name.substr(name.find_last_of("\\/") + 1);
 	}
+	const std::vector<FaceRect>& GetFaces() { return mFaces; }
 
+	cv::Mat GetMat() {return cv::imread(mPath);}
+	bool CheckEnableFindFaceAuto() { return mEnableFindFaceAuto; }
+	void FaceDetection(cv::Size limitSize, float limitConfident, std::vector<std::string>& debugLogs)
+	{
+		cv::Mat faceDetectImg;
+		ImVec2 newSize = GetScaleImageSize(ImVec2(mWidth, mHeight), ImVec2(limitSize.width, limitSize.height));
+		cv::resize(GetMat(), faceDetectImg, cv::Size(newSize.x, newSize.y), cv::INTER_CUBIC);
+
+		std::vector<FaceRect> faces = objectdetect_cnn((unsigned char*)(faceDetectImg.ptr(0)), faceDetectImg.cols, faceDetectImg.rows, (int)faceDetectImg.step);
+		int num_faces =(int)faces.size();
+		num_faces = MIN(num_faces, 256);
+		cv::Mat faceDetectImgResult = faceDetectImg.clone();
+		for (int i = 0; i < num_faces; i++)
+		{
+			cv::Rect faceROI = {faces[i].x, faces[i].y, faces[i].w, faces[i].h};
+			if(faces[i].score > limitConfident && faceROI.area() < faceDetectImg.size().area())
+			{
+				//show the score of the face. Its range is [0-100]
+				std::string sScore = std::format("{:.2f}", faces[i].score);
+				cv::putText(faceDetectImgResult, sScore, cv::Point(faceROI.x, faceROI.y-3), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+				//draw face rectangle
+				cv::rectangle(faceDetectImgResult, faceROI, cv::Scalar(0, 255, 0), 2);
+				mFaces.emplace_back(faces[i]);
+			}
+			//print the result
+			std::string logStr = std::format("face {}: confidence={:.2f}, [{}, {}, {}, {}]", 
+					i, faces[i].score, faces[i].x, faces[i].y, faces[i].w, faces[i].h);
+			debugLogs.push_back(logStr);
+		}
+
+		for (int i = 0; i < mFaces.size(); i++)
+		{
+			cv::Rect oriFace = GetScaleRect(cv::Rect(mFaces[i].x, mFaces[i].y, mFaces[i].w, mFaces[i].h), cv::Size(mWidth, mHeight), faceDetectImg.size());
+			mFaces[i].x = oriFace.x;
+			mFaces[i].y = oriFace.y;
+			mFaces[i].w = oriFace.width;
+			mFaces[i].h = oriFace.height;
+		}
+
+		faceDetectImgResult.release();
+		faceDetectImg.release();
+		mEnableFindFaceAuto = false;
+	}
 private:
 	std::string mPath = "";
+	bool mEnableFindFaceAuto = true;
 	int mWidth;
 	int mHeight;
 	Texture2D mTexture;
+	std::vector<FaceRect> mFaces;
 };
 
 class Application
@@ -107,7 +156,6 @@ public:
 					{
 						puts("Success!");
 						mImageList.clear();
-						mFaces.clear();
 						mCurrentMat.release();
 						mPreviousIdex = mCurrentIdex = 0;
 						for (size_t i = 0; i < NFD_PathSet_GetCount(&outPaths); ++i)
@@ -134,9 +182,9 @@ public:
 					{
 						puts("Success!");
 						puts(outPath);
+						if(!mImageList.empty()) for(auto& img : mImageList) img->Release();
 						mImageList.clear();
 						mPreviousIdex = mCurrentIdex = 0;
-						mFaces.clear();
 						mCurrentMat.release();
 						std::vector<std::string> extensions = { ".jpg", ".JPG", ".png", ".PNG" };
 						for (const auto& entry : std::filesystem::directory_iterator(outPath)) {
@@ -280,23 +328,26 @@ public:
 			ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
 			ImGui::Combo("##hidelabel", &mAlgorithmItem, algorithmItems, algorithmSize);
 			ImGui::PopID();
-			ImGui::PushID("Face");
-			ImGui::TextUnformatted("enable face detection");
-			ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
-			ImGui::Checkbox("##hidelabel", &mEnableFaceDetection);
-			ImGui::PopID();
+			
 
-			if(mEnableFaceDetection)
+			//if(mEnableFaceDetection)
 			{
+				ImGui::Separator();
+				ImGui::PushID("Face");
+				if(ImGui::Button("face detection"))
+				{
+					if(!mImageList.empty()) mImageList[mCurrentIdex]->FaceDetection(resizeFaceDetection, mLimitConfident, debugLog);
+				}
+				ImGui::PopID();
 				ImGui::PushMultiItemsWidths(2, ImGui::CalcItemWidth());
 				ImGui::PushID("resize.w");
-				ImGui::TextUnformatted("resize.w:");
+				ImGui::TextUnformatted("limit resize(w,h):");
 				ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
 				ImGui::DragInt("##hidelabel", &resizeFaceDetection.width, 1, 100, 1000);
 				ImGui::PopID();
 				ImGui::PushID("resize.h");
 				ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
-				ImGui::TextUnformatted("resize.h:");
+				ImGui::TextUnformatted("x");
 				ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
 				ImGui::DragInt("##hidelabel", &resizeFaceDetection.height, 1, 100, 1000);
 				ImGui::PopItemWidth();
@@ -308,30 +359,31 @@ public:
 				ImGui::PopItemWidth();
 				ImGui::PopID();
 			}
+			ImGui::End();
 		}
 
 		{
-			ImGui::SetNextWindowSize(ImVec2(screen_size.x * 2 / 3, screen_size.y * 3 / 4));
+			ImGui::SetNextWindowSize(ImVec2(screen_size.x * 2 / 3.0f, screen_size.y * 3 / 4.0f));
 			ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 20, 20, 255));
 			ImGui::Begin("Resize", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 			// image_size = ImVec2(text.mWidth, text.mHeight);
 			int border = 20;
 			ImVec2 currentWindowSize = ImGui::GetWindowSize();
 			ImVec2 windowSize(ImGui::GetWindowSize().x - border * 2, ImGui::GetWindowSize().y - border * 2);
-			ImVec2 newSize = GetScaleImageSize(ImVec2(static_cast<float>(cm2pixel(mWidth)), static_cast<float>(mTexture.height)), windowSize);
-			ImGui::SetCursorPos(ImVec2((ImGui::GetWindowSize().x - newSize.x) * 0.5f, (ImGui::GetWindowSize().y - newSize.y) * 0.5f + border / 2));
+			ImVec2 newSize = GetScaleImageSize(ImVec2(static_cast<int>(cm2pixel(mWidth)), static_cast<int>(mTexture.height)), windowSize);
+			ImGui::SetCursorPos(ImVec2((ImGui::GetWindowSize().x - newSize.x) * 0.5f, (ImGui::GetWindowSize().y - newSize.y) * 0.5f + border / 2.0f));
 			ImGui::Image((void *)(intptr_t)mTexture.id, newSize);
 			ImGui::End();
 			ImGui::PopStyleColor();
 		}
 
 		{
-			ImGui::SetNextWindowSize(ImVec2(screen_size.x / 4, screen_size.y / 2));
+			ImGui::SetNextWindowSize(ImVec2(screen_size.x / 4.0f, screen_size.y / 2.0f));
 			ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 20, 20, 255));
 			ImGui::Begin("Image List", NULL, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 			int border = 5;
 			ImVec2 currentWindowSize = ImGui::GetWindowSize();
-			int currentCursorPosX = border / 2;
+			int currentCursorPosX = border / 2.0f;
 			int currentRow = 0;
 			int currentColumn = 0;
 			int numColumns = 5;
@@ -339,7 +391,7 @@ public:
 			{
 				auto tex = mImageList[i]->GetTexture();
 				ImVec2 windowSize(ImGui::GetWindowSize().x - border * numColumns, ImGui::GetWindowSize().y - border * 2);
-				ImVec2 image_size = ImVec2(static_cast<float>(windowSize.x / numColumns), static_cast<float>(windowSize.x / numColumns)); //GetScaleImageSize(ImVec2(static_cast<float>(tex.width), static_cast<float>(tex.height)), windowSize);
+				ImVec2 image_size = ImVec2(static_cast<int>(windowSize.x / (float)numColumns), static_cast<int>(windowSize.x / (float)numColumns)); //GetScaleImageSize(ImVec2(static_cast<float>(tex.width), static_cast<float>(tex.height)), windowSize);
 				ImVec2 image_pos = ImVec2(currentCursorPosX, currentRow * (image_size.y + border * 2) + 20);
 				ImGui::SetCursorPos(image_pos);
 				ImGui::Image((void *)(intptr_t)tex.id, image_size);
@@ -349,7 +401,6 @@ public:
 				{
 					mPreviousIdex = mCurrentIdex;
 					mCurrentIdex = i;
-					mFaces.clear();
 					mCurrentMat.release();
 				}
 
@@ -368,7 +419,7 @@ public:
 					currentRow++;
 					currentColumn = 0;
 				}
-				currentCursorPosX = currentColumn * (image_size.x + border) + border / 2;
+				currentCursorPosX = currentColumn * (image_size.x + border) + border / 2.0f;
 				//currentCursorPosX += image_size.x + border / 2;
 			}
 			// Get the maximum horizontal scrolling position
@@ -381,28 +432,71 @@ public:
 		}
 
 		{
-			ImGui::SetNextWindowSize(ImVec2(screen_size.x * 2 / 3, screen_size.y * 3 / 4));
+			//ImGui::SetNextWindowSize(ImVec2(screen_size.x * 2 / 3.0f, screen_size.y * 3 / 4.0f));
 			ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 20, 20, 255));
 			ImGui::Begin("Viewer", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+			ImGui::PushID("Viewer");
+			static ImVec2 prev_window_pos = ImVec2(0, 0);
+			ImVec2 window_pos = ImGui::GetWindowPos();
+			ImVec2 offset = ImVec2(window_pos.x - prev_window_pos.x, window_pos.y - prev_window_pos.y);
+			ImDrawList* draw_list = ImGui::GetWindowDrawList();
+			// image_size = ImVec2(text.mWidth, text.mHeight);
+			int border = 20;
+			ImVec2 currentWindowSize = ImGui::GetWindowSize();
+			ImVec2 windowSize(ImGui::GetWindowSize().x - border * 2.0f, ImGui::GetWindowSize().y - border * 2.0f);
 			if (!mImageList.empty())
 			{
+				ImVec2 image_size = GetScaleImageSize(ImVec2(mImageList[mCurrentIdex]->GetWidth(), mImageList[mCurrentIdex]->GetHeight()), windowSize);
+				ImVec2 image_pos = ImVec2(static_cast<int>((ImGui::GetWindowSize().x - image_size.x) * 0.5f), static_cast<int>((ImGui::GetWindowSize().y - image_size.y) * 0.5f + border / 2.0f));
+				ImGui::SetCursorPos(image_pos);
+				ImGui::Image((void *)(intptr_t)mImageList[mCurrentIdex]->GetTexture().id, image_size);
 
-				// image_size = ImVec2(text.mWidth, text.mHeight);
-				int border = 20;
-				ImVec2 currentWindowSize = ImGui::GetWindowSize();
-				ImVec2 windowSize(ImGui::GetWindowSize().x - border * 2, ImGui::GetWindowSize().y - border * 2);
-				ImVec2 newSize = GetScaleImageSize(ImVec2(mImageList[mCurrentIdex]->GetWidth(), mImageList[mCurrentIdex]->GetHeight()), windowSize);
-				ImGui::SetCursorPos(ImVec2((ImGui::GetWindowSize().x - newSize.x) * 0.5f, (ImGui::GetWindowSize().y - newSize.y) * 0.5f + border / 2));
-				ImGui::Image((void *)(intptr_t)mImageList[mCurrentIdex]->GetTexture().id, newSize);
+				auto faces = mImageList[mCurrentIdex]->GetFaces();
+				if(faces.empty() && mImageList[mCurrentIdex]->CheckEnableFindFaceAuto())
+				{
+					mImageList[mCurrentIdex]->FaceDetection(resizeFaceDetection, mLimitConfident, debugLog);
+				}
+				else
+				{
+					image_pos.x += window_pos.x;
+					image_pos.y += window_pos.y;
+					for (int i = 0; i < faces.size(); i++)
+					{
+						cv::Rect faceROI = GetScaleRect(cv::Rect(faces[i].x, faces[i].y, faces[i].w, faces[i].h), cv::Size(image_size.x, image_size.y), mCurrentMat.size());
+						//show the score of the face. Its range is [0-100]
+						std::string sScore = std::format("{:.2f}", faces[i].score);
+						//ImGui::SetCursorScreenPos(image_pos);
+
+						ImVec2 border_min = ImVec2(image_pos.x + faceROI.x, image_pos.y + faceROI.y);
+						ImVec2 border_max = ImVec2(border_min.x + faceROI.width, border_min.y + faceROI.height);
+						//ImGui::SetCursorPos(border_min);
+						draw_list->AddRect(border_min, border_max, IM_COL32(0, 255, 0, 255));
+						//ImGui::SetCursorPos(border_min);
+						draw_list->AddText(ImVec2(border_min.x, border_min.y - 15), IM_COL32(0, 255, 0, 255), sScore.c_str());
+						
+						//print the result
+						//debugLog.push_back(std::format("face {}: confidence={:.2f}, [{}, {}, {}, {}]", i, faces[i].score, faces[i].x, faces[i].y, faces[i].w, faces[i].h));
+						//debugLog.push_back(std::format(" image pos [{}, {}]", image_pos.x, image_pos.y));
+						//debugLog.push_back(std::format(" new face ROI [{}, {}, {}, {}]", faceROI.x, faceROI.y, faceROI.width, faceROI.height));
+						//debugLog.push_back(std::format(" border_min pos [{}, {}]", border_min.x, border_min.y));
+						//debugLog.push_back(std::format(" border_max pos [{}, {}]", border_max.x, border_max.y));
+						// cv::putText(tmpImg, sScore, cv::Point(faceROI.x, faceROI.y-13), cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 255, 0), 10);
+						// draw face rectangle
+						// cv::rectangle(tmpImg, faceROI, cv::Scalar(0, 255, 0), 10);
+					}
+				}
 			}
+			ImGui::PopID();
 			ImGui::End();
 			ImGui::PopStyleColor();
+			prev_window_pos = window_pos;
 		}
 
 		{
 			ImGui::Begin("Debug");
-			if(ImGui::Button("Clear", ImVec2(50,20))) debugLog.clear();
-			for(auto& str : debugLog)
+			if (ImGui::Button("Clear"))
+				debugLog.clear();
+			for (auto &str : debugLog)
 				ImGui::TextWrapped(str.c_str());
 			ImGui::End();
 		}
@@ -449,58 +543,42 @@ public:
 				// 	cv::rotate(mText, mText, cv::ROTATE_90_CLOCKWISE);
 				// 	borderRect = cv::Rect(borderOfsetPixel*2, borderOfsetPixel, size.width - borderOfsetPixel*3, size.height - borderOfsetPixel*2);
 				// }
-				if(mPreviousIdex != mCurrentIdex || mCurrentMat.empty()) mCurrentMat = cv::imread(mImageList[mCurrentIdex]->GetPath());
+				if(mPreviousIdex != mCurrentIdex || mCurrentMat.empty()) mCurrentMat = mImageList[mCurrentIdex]->GetMat();
 
 
 				cv::Mat tmpImg = mCurrentMat.clone();
 
-				if(mEnableFaceDetection && mFaces.empty() || mPreviousLimitConfident != mLimitConfident || previousResizeFaceDetection != resizeFaceDetection)
+				cv::Mat protectMat;
+				auto faces = mImageList[mCurrentIdex]->GetFaces();
+				if(!faces.empty())
 				{
-					cv::Mat faceDetectImg, faceDetectImgResult;
-					ImVec2 newSize = GetScaleImageSize(ImVec2(mCurrentMat.cols, mCurrentMat.rows), ImVec2(resizeFaceDetection.width, resizeFaceDetection.height));
-					cv::resize(mCurrentMat, faceDetectImg, cv::Size(newSize.x, newSize.y), cv::INTER_CUBIC);
-					if(FaceDetection(faceDetectImg, faceDetectImgResult, mLimitConfident, mFaces, debugLog))
+					protectMat = cv::Mat::zeros(mCurrentMat.size(), mCurrentMat.type());
+					for (int i = 0; i < faces.size(); i++)
 					{
-
-						cv::Mat resizedFace;
-						cv::Size originalSize(mCurrentMat.cols, mCurrentMat.rows);
-
-						for (int i = 0; i < mFaces.size(); i++) {
-							mFaces[i].x *= mCurrentMat.cols / faceDetectImg.cols;
-							mFaces[i].y *= mCurrentMat.rows / faceDetectImg.rows;
-							mFaces[i].w *= mCurrentMat.cols / faceDetectImg.cols;
-							mFaces[i].h *= mCurrentMat.rows / faceDetectImg.rows;
-						}
-						
-						faceDetectImg.release();
-						faceDetectImgResult.release();
-					} 
-					mPreviousLimitConfident = mLimitConfident;
-					previousResizeFaceDetection = resizeFaceDetection;
-				}
-				
-				if(!mFaces.empty())
-				{
-					for (int i = 0; i < mFaces.size(); i++)
-					{
-						cv::Rect faceROI = {mFaces[i].x, mFaces[i].y, mFaces[i].w, mFaces[i].h};
+						cv::Rect faceROI = {faces[i].x, faces[i].y, faces[i].w, faces[i].h};
 						//show the score of the face. Its range is [0-100]
-						std::string sScore = std::format("{:.2f}", mFaces[i].score);
-						cv::putText(tmpImg, sScore, cv::Point(faceROI.x, faceROI.y-13), cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 255, 0), 10);
+						//std::string sScore = std::format("{:.2f}", faces[i].score);
+						//cv::putText(tmpImg, sScore, cv::Point(faceROI.x, faceROI.y-13), cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 255, 0), 10);
 						//draw face rectangle
-						cv::rectangle(tmpImg, faceROI, cv::Scalar(0, 255, 0), 10);
+						//cv::rectangle(tmpImg, faceROI, cv::Scalar(0, 255, 0), 10);
+						cv::rectangle(protectMat, faceROI, cv::Scalar(255, 255, 255), -1);
 					}
 				}
 				
-				
-				//if(mAlgorithmItem == 0)
+				if(mAlgorithmItem == 0)
 				{
-					resizeImg = resizeKeepAspectRatio(tmpImg, size, bgColor);
+					resizeImg = resizeKeepAspectRatio(tmpImg, size, bgColor, true);
+
+					int vertical = (size.height - resizeImg.rows) / 2;
+					int horizontal = (size.width - resizeImg.cols) / 2;
+					SeamCarver seamCarver;
+					seamCarver.SetKernelSize(3);
+					seamCarver.SetProtectionMask(protectMat);
+					seamCarver.Inspection(resizeImg);
 				}
-				// else if(mAlgorithmItem == 1)
-				// {
-					
-				// }
+				else if(mAlgorithmItem == 1)
+				{
+				}
 				tmpImg.release();
 			}
 			// update OpenGL texture if size has changed
@@ -545,7 +623,6 @@ public:
 		ImageRelease(mTexture);
 		mTexture = ImageInfo::CreateTexture(cv::Mat::zeros(cv::Size(cm2pixel(mWidth), cm2pixel(mHeight)), CV_8UC3));
 		debugLog.clear();
-		mFaces.clear();
 	}
 
 	~Application()
@@ -576,7 +653,6 @@ private:
 	float mPreviousLimitConfident = 0.5;
 	cv::Size resizeFaceDetection {300,300};
 	cv::Size previousResizeFaceDetection {300,300};
-	std::vector<FaceRect> mFaces;
 	std::vector<std::string> debugLog;
 };
 

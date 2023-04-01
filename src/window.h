@@ -49,15 +49,15 @@ public:
     template<typename F>
     void run(F &&draw) noexcept {
         while (!should_close()) {
-            double currentTime = glfwGetTime();
-            double deltaTime = currentTime - _lastFrameTime;
-            _lastFrameTime = currentTime;
+            // double currentTime = glfwGetTime();
+            // double deltaTime = currentTime - _lastFrameTime;
+            // _lastFrameTime = currentTime;
 
-            // Limit frame rate
-            double sleepTime = _targetFrameTime - deltaTime;
-            if (sleepTime > 0.0) {
-                std::this_thread::sleep_for(std::chrono::duration<double>(sleepTime));
-            }
+            // // Limit frame rate
+            // double sleepTime = _targetFrameTime - deltaTime;
+            // if (sleepTime > 0.0) {
+            //     std::this_thread::sleep_for(std::chrono::duration<double>(sleepTime));
+            // }
 
             run_one_frame(draw);
 
