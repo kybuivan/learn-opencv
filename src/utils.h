@@ -15,23 +15,23 @@
 //define the buffer size. Do not change the size!
 #define DETECT_BUFFER_SIZE 0x20000
 
-float cm2pixel(float d)
+inline float cm2pixel(float d)
 {
 	return d * PPI * CM2INCH;
 }
 
-cv::Scalar vec2scalar(ImVec4 vec)
+inline cv::Scalar vec2scalar(ImVec4 vec)
 {
 	return cv::Scalar(vec.z * 255, vec.y * 255, vec.x * 255);
 }
 
-bool RoiRefine(cv::Rect &roi, cv::Size size)
+inline bool RoiRefine(cv::Rect &roi, cv::Size size)
 {
 	roi = roi & cv::Rect(cv::Point(0, 0), size);
 	return roi.area() > 0;
 }
 
-ImVec2 GetScaleImageSize(ImVec2 img_size, ImVec2 window_size)
+inline ImVec2 GetScaleImageSize(ImVec2 img_size, ImVec2 window_size)
 {
 	ImVec2 outSize{};
 	if (img_size.x != 0 && img_size.y != 0)
@@ -56,7 +56,7 @@ ImVec2 GetScaleImageSize(ImVec2 img_size, ImVec2 window_size)
 	return outSize;
 }
 
-cv::Mat resizeKeepAspectRatio(const cv::Mat &input, const cv::Size &dstSize, const cv::Scalar &bgcolor, bool makeBorder = true)
+inline cv::Mat resizeKeepAspectRatio(const cv::Mat &input, const cv::Size &dstSize, const cv::Scalar &bgcolor, bool makeBorder = true)
 {
 	cv::Mat output;
 
@@ -84,7 +84,7 @@ cv::Mat resizeKeepAspectRatio(const cv::Mat &input, const cv::Size &dstSize, con
 	return std::move(output);
 }
 
-cv::Rect GetScaleRect(cv::Rect rect, cv::Size targetSize, cv::Size currentSize)
+inline cv::Rect GetScaleRect(cv::Rect rect, cv::Size targetSize, cv::Size currentSize)
 {
 	cv::Rect2f result = rect;
 	result.x *= (float)targetSize.width / currentSize.width;

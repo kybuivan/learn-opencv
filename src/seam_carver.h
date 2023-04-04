@@ -3,30 +3,42 @@
 #include <vector>
 #include "opencv2/core.hpp"
 
+enum class SeamDirection {
+  VERTICAL,
+  HORIZONTAL
+};
+
+enum class SeamEnergyType {
+  MIN_ENERGY,
+  MAX_ENERGY
+};
+
 class SeamCarver {
 public:
-	SeamCarver();
-	void SetKernelSize(int kSize) { mKernelSize = kSize; }
-	void SetProtectionMask(const cv::Mat &mask) { mProtectionMask = mask; }
-	void Inspection(const cv::Mat& input);
-	cv::Mat GetEnergyMap();
+	explicit SeamCarver();
+	void Inspection(const cv::Mat& input) noexcept;
+	void SetSize(cv::Size size) noexcept { mSize = size; }
+	void SetKernelSize(int kSize) noexcept { mKernelSize = kSize; }
+	void SetProtectionMask(const cv::Mat &mask) noexcept { mProtectionMask = mask; }
+	void SetRemovalMask(const cv::Mat &mask) noexcept { mRemovalMask = mask; }
+	cv::Mat GetCarvedImage() noexcept {return std::move(mCarvedImage); }
 private:
-	void CalcEnergyMap();
-	void FindHorizontalSeam(std::vector<int> &seam);
-	void FindVerticalSeam(std::vector<int> &seam);
-	void CalcDynamicProgramming(const cv::Mat &energyMap);
-	void RemoveHorizontalSeam(const std::vector<int> &seam);
-	void RemoveVerticalSeam(const std::vector<int> &seam);
-
+	void CalcEnergyMap() noexcept;
+	cv::Mat CalcCarvedImage(const cv::Mat &image, cv::Size size) noexcept;
+	void FindHorizontalSeam(std::vector<int> *seam) noexcept;
+	void FindVerticalSeam(std::vector<int> *seam) noexcept;
+	void CalcDynamicProgramming(const cv::Mat& energy_map, std::vector<int>* seam, SeamDirection direction, SeamEnergyType energy_type) noexcept;
+	void RemoveSeam(cv::Mat& image, const std::vector<int> &seam, SeamDirection direction) noexcept;
+	bool CheckFinishCarved() noexcept;
 private:
+	int mKernelSize = 3;
+	cv::Size mSize{};
 	cv::Mat mOriginImage{};
 	cv::Mat mCarvedImage{};
-	cv::Mat mGrayCarvedImage{};
 	cv::Mat mEnergyMap{};
-	cv::Mat mSobelMapX{};
-	cv::Mat mSobelMapY{};
 	cv::Mat mRemovalMask{};
 	cv::Mat mProtectionMask{};
-	int mKernelSize = 3;
+	SeamDirection mDirection;
+	SeamEnergyType mEnergyType = SeamEnergyType::MIN_ENERGY;
 };
 #endif

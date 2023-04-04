@@ -3,11 +3,11 @@
 #include <vector>
 #include "window.h"
 #include "nfd.h"
-#include "utils.h"
 #include "ref.h"
 #include "opencv2/highgui.hpp"
 #include <iostream>
 #include <filesystem>
+#include "utils.h"
 #include "seam_carver.h"
 using namespace std::filesystem;
 const char* algorithmItems[] = { "resize", "seam", "crop" };
@@ -157,6 +157,7 @@ public:
 						puts("Success!");
 						mImageList.clear();
 						mCurrentMat.release();
+						mResizeMat.release();
 						mPreviousIdex = mCurrentIdex = 0;
 						for (size_t i = 0; i < NFD_PathSet_GetCount(&outPaths); ++i)
 						{
@@ -186,6 +187,7 @@ public:
 						mImageList.clear();
 						mPreviousIdex = mCurrentIdex = 0;
 						mCurrentMat.release();
+						mResizeMat.release();
 						std::vector<std::string> extensions = { ".jpg", ".JPG", ".png", ".PNG" };
 						for (const auto& entry : std::filesystem::directory_iterator(outPath)) {
 							if (entry.is_regular_file()) {
@@ -328,7 +330,10 @@ public:
 			ImGui::SameLine(0, g.Style.ItemInnerSpacing.x);
 			ImGui::Combo("##hidelabel", &mAlgorithmItem, algorithmItems, algorithmSize);
 			ImGui::PopID();
-			
+			if(ImGui::Button("resize"))
+			{
+				ResizeImage();
+			}
 
 			//if(mEnableFaceDetection)
 			{
@@ -528,75 +533,91 @@ public:
 	{
 	}
 
-	void Inspection()
+	void ResizeImage()
 	{
 		cv::Scalar bgColor = vec2scalar(mBgColor);
 		cv::Size size = cv::Size(cm2pixel(mWidth), cm2pixel(mHeight));
 		// crash when input width, height
 		if (!size.empty())
 		{
-			cv::Mat resizeImg = cv::Mat(size, CV_8UC3, bgColor);
 			if (!mImageList.empty())
 			{
+				mResizeMat.release();
 				// if(mText.cols > mText.rows)
 				// {
 				// 	cv::rotate(mText, mText, cv::ROTATE_90_CLOCKWISE);
 				// 	borderRect = cv::Rect(borderOfsetPixel*2, borderOfsetPixel, size.width - borderOfsetPixel*3, size.height - borderOfsetPixel*2);
 				// }
-				if(mPreviousIdex != mCurrentIdex || mCurrentMat.empty()) mCurrentMat = mImageList[mCurrentIdex]->GetMat();
-
 
 				cv::Mat tmpImg = mCurrentMat.clone();
 
 				cv::Mat protectMat;
 				auto faces = mImageList[mCurrentIdex]->GetFaces();
-				if(!faces.empty())
+				if (!faces.empty())
 				{
-					protectMat = cv::Mat::zeros(mCurrentMat.size(), mCurrentMat.type());
+					protectMat = cv::Mat::zeros(mCurrentMat.size(), CV_8UC1);
 					for (int i = 0; i < faces.size(); i++)
 					{
-						cv::Rect faceROI = {faces[i].x, faces[i].y, faces[i].w, faces[i].h};
+						cv::Rect faceROI = { faces[i].x, faces[i].y, faces[i].w, faces[i].h };
 						//show the score of the face. Its range is [0-100]
 						//std::string sScore = std::format("{:.2f}", faces[i].score);
 						//cv::putText(tmpImg, sScore, cv::Point(faceROI.x, faceROI.y-13), cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 255, 0), 10);
 						//draw face rectangle
 						//cv::rectangle(tmpImg, faceROI, cv::Scalar(0, 255, 0), 10);
-						cv::rectangle(protectMat, faceROI, cv::Scalar(255, 255, 255), -1);
+						cv::rectangle(protectMat, faceROI, cv::Scalar(255), -1);
 					}
 				}
-				
-				if(mAlgorithmItem == 0)
-				{
-					resizeImg = resizeKeepAspectRatio(tmpImg, size, bgColor, true);
 
-					int vertical = (size.height - resizeImg.rows) / 2;
-					int horizontal = (size.width - resizeImg.cols) / 2;
+				if (mAlgorithmItem == 0)
+				{
+					mResizeMat = resizeKeepAspectRatio(tmpImg, size, bgColor, true);
+				}
+				else if (mAlgorithmItem == 1)
+				{
 					SeamCarver seamCarver;
+					seamCarver.SetSize(size);
 					seamCarver.SetKernelSize(3);
 					seamCarver.SetProtectionMask(protectMat);
-					seamCarver.Inspection(resizeImg);
-				}
-				else if(mAlgorithmItem == 1)
-				{
+					seamCarver.Inspection(tmpImg);
+					mResizeMat = seamCarver.GetCarvedImage();
 				}
 				tmpImg.release();
 			}
+		}
+	}
+
+	void Inspection()
+	{
+		cv::Scalar bgColor = vec2scalar(mBgColor);
+		cv::Size size = cv::Size(cm2pixel(mWidth), cm2pixel(mHeight));
+		if(mResizeMat.empty()) mResizeMat = cv::Mat(size, CV_8UC3, bgColor);
+
+		// crash when input width, height
+		if (!mResizeMat.empty())
+		{
+			if (!mImageList.empty())
+				if (mPreviousIdex != mCurrentIdex || mCurrentMat.empty())
+					mCurrentMat = mImageList[mCurrentIdex]->GetMat();
+
 			// update OpenGL texture if size has changed
-			if (size.width != mTexture.width || size.height != mTexture.height)
+			if (mResizeMat.cols != mTexture.width || mResizeMat.rows != mTexture.height)
 			{
 				ImageRelease(mTexture);
-				mTexture = ImageInfo::CreateTexture(cv::Mat::zeros(size, CV_8UC3));
-				mTexture.width = size.width;
-				mTexture.height = size.height;
+				mTexture = ImageInfo::CreateTexture(cv::Mat::zeros(mResizeMat.size(), CV_8UC3));
+				mTexture.width = mResizeMat.cols;
+				mTexture.height = mResizeMat.rows;
 				// glTexImage2D(GL_TEXTURE_2D, 0, GL_BGR, mTexture.width, mTexture.height, 0, GL_BGR, GL_UNSIGNED_BYTE, NULL);
 			}
+
+			cv::Mat resizedMat;
+			cv::resize(mResizeMat, resizedMat, cv::Size(mTexture.width, mTexture.height));
+
 			glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)mTexture.id);
 
 			// set alignment explicitly to 1
 			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, resizeImg.cols, resizeImg.rows, GL_BGR, GL_UNSIGNED_BYTE, resizeImg.data);
-			resizeImg.release();
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, resizedMat.cols, resizedMat.rows, GL_BGR, GL_UNSIGNED_BYTE, resizedMat.data);
 		}
 	}
 
@@ -646,6 +667,7 @@ private:
 	int mCurrentIdex;
 	int mPreviousIdex;
 	cv::Mat mCurrentMat;
+	cv::Mat mResizeMat;
 	Texture2D mTexture;
 	int mAlgorithmItem = 0;
 	bool mEnableFaceDetection = false;
