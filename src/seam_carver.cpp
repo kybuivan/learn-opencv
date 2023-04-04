@@ -191,24 +191,24 @@ void SeamCarver::CalcDynamicProgramming(const cv::Mat& energy_map, std::vector<i
             seam_idx = dp_path[(*seam)[j]][j];
         }
 
-        cv::Mat debug;
-        cv::cvtColor(energy_map, debug, cv::COLOR_GRAY2RGB);
-        if (seam_direction == SeamDirection::VERTICAL)
-        {
-            for (int i = 0; i < debug.rows; i++)
-            {
-                debug.at<cv::Vec3f>(i, (*seam)[i]) = cv::Vec3f(0, 0, 255);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < debug.cols; i++)
-            {
-                debug.at<cv::Vec3f>((*seam)[i], i) = cv::Vec3f(0, 0, 255);
-            }
-        }
-        cv::imshow("debug", debug);
-        cv::waitKey(0);
+        // cv::Mat debug;
+        // cv::cvtColor(energy_map, debug, cv::COLOR_GRAY2RGB);
+        // if (seam_direction == SeamDirection::VERTICAL)
+        // {
+        //     for (int i = 0; i < debug.rows; i++)
+        //     {
+        //         debug.at<cv::Vec3f>(i, (*seam)[i]) = cv::Vec3f(0, 0, 255);
+        //     }
+        // }
+        // else
+        // {
+        //     for (int i = 0; i < debug.cols; i++)
+        //     {
+        //         debug.at<cv::Vec3f>((*seam)[i], i) = cv::Vec3f(0, 0, 255);
+        //     }
+        // }
+        // cv::imshow("debug", debug);
+        // cv::waitKey(0);
     }
 }
 
