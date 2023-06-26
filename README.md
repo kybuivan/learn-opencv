@@ -1,5 +1,5 @@
-# Resize
-[![Build Status](https://github.com/kybuivan/resize/actions/workflows/windows.yml/badge.svg)](https://github.com/kybuivan/resize/actions)  
+# Opencv Face Detection Imgui
+[![Build Status](https://github.com/kybuivan/opencv-libfacedetection-imgui/actions/workflows/windows.yml/badge.svg)](https://github.com/kybuivan/opencv-libfacedetection-imgui/actions)  
 Resize is an open-source image processing application built using C++. It allows users to perform a variety of image manipulation tasks, such as resizing, blurring, sharpening, and colorization.
 
 ![screenshot](/screenshot/Capture1.PNG "screenshot")
@@ -22,7 +22,7 @@ To build Resize:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/kybuivan/resize.git
+git clone https://github.com/kybuivan/opencv-libfacedetection-imgui.git
 ```
 2. Initialize the cmake submodule recursively:
 ```bash
@@ -63,7 +63,7 @@ Resize has a simple menu bar that allows users to open images and perform basic 
 	- About: Not implemented.
 
 ## License
-This project is licensed under the Apache-2.0 license - see the [LICENSE](https://github.com/kybuivan/resize/blob/main/LICENSE) file for details.
+This project is licensed under the Apache-2.0 license - see the [LICENSE](https://github.com/kybuivan/opencv-libfacedetection-imgui/blob/main/LICENSE) file for details.
 
 ## Acknowledgments
 This project was built using the following libraries: GLFW, GLAD, ImGui, nfd, and OpenCV.
